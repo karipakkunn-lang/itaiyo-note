@@ -65,6 +65,20 @@ li:first-child{border-top:none}
 .del.sure{border-color:var(--danger);color:var(--danger);font-weight:700}
 .empty{color:var(--muted);font-size:15px;line-height:1.7;padding:8px 0 14px}
 .note{font-size:12px;color:var(--muted);text-align:center;line-height:1.6}
+.quick{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+.tag{font-family:inherit;font-size:15px;font-weight:700;border:2px solid var(--line);background:var(--card);color:var(--fg);border-radius:999px;padding:10px 14px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.tag.on{border-color:var(--tear);background:var(--tear);color:var(--card)}
+.tag:disabled{opacity:.4}
+.quick-hint{font-size:12px;color:var(--muted);text-align:center;margin-top:-6px}
+.chip.t{background:var(--face);color:#1e2a3d;font-weight:700}
+.extra{font-size:14px;line-height:1.6;margin-top:2px;word-break:break-word}
+.btns{display:flex;flex-direction:column;gap:6px;flex:none}
+.edit{display:flex;flex-direction:column;gap:10px;margin-top:10px;padding:12px;background:var(--bg);border-radius:14px}
+.edit label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}
+.edit input,.edit textarea{font-family:inherit;font-size:16px;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px;width:100%}
+.edit .quick{justify-content:flex-start}
+.edit .tag{font-size:13px;padding:6px 10px}
+.save{font-family:inherit;font-size:15px;font-weight:700;border:none;background:var(--tear);color:var(--card);border-radius:999px;padding:10px;cursor:pointer}
 </style>
 </head>
 <body>
@@ -84,6 +98,8 @@ li:first-child{border-top:none}
     </button>
     <div class="label">痛いよー</div>
     <div class="status" id="status" role="status">押すと、いまの日時と天気・気圧を記録するよ</div>
+    <div class="quick" id="quick"></div>
+    <div class="quick-hint">↑ いちばん新しい記録に印がつくよ</div>
   </div>
 
   <section>
@@ -162,7 +178,65 @@ function diffChip(label, v){
   return `<span class="chip ${cls}">${label} ${sign}${v}hPa</span>`;
 }
 
+const TAGS = [
+  { id:"cold", label:"🤧 風邪っぽい" },
+  { id:"period", label:"🚺 生理" },
+  { id:"med", label:"💊 薬のんだ" }
+];
+let openEdit = null; // 書きたし中の記録
+
+function toggleTag(rec, id){
+  rec.tags = rec.tags || [];
+  rec.tags = rec.tags.includes(id) ? rec.tags.filter(t => t !== id) : [...rec.tags, id];
+}
+
+function renderQuick(){
+  const q = $("#quick"); q.textContent = "";
+  const latest = rows[0];
+  for (const t of TAGS){
+    const b = document.createElement("button");
+    b.className = "tag" + (latest && (latest.tags||[]).includes(t.id) ? " on" : "");
+    b.textContent = t.label;
+    b.disabled = !latest;
+    b.onclick = () => { toggleTag(latest, t.id); save(rows); render(); };
+    q.appendChild(b);
+  }
+}
+
+function esc(s){ return String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c])); }
+
+function editForm(r){
+  const box = document.createElement("div");
+  box.className = "edit";
+  const tmp = { tags: [...(r.tags||[])] };
+  box.innerHTML = `<div class="quick"></div>
+    <label>体温（℃）<input type="number" inputmode="decimal" step="0.1" min="34" max="42" id="temp-${r.at}" value="${r.temp ?? ""}" placeholder="例：37.2"></label>
+    <label>飲んだ薬<input type="text" id="med-${r.at}" value="${esc(r.medName || "")}" placeholder="例：ロキソニン 1錠"></label>
+    <label>メモ<textarea rows="2" id="memo-${r.at}" placeholder="例：右側がズキズキ、寝不足">${esc(r.memo || "")}</textarea></label>
+    <button class="save">保存する</button>`;
+  const q = box.querySelector(".quick");
+  for (const t of TAGS){
+    const b = document.createElement("button");
+    b.className = "tag" + (tmp.tags.includes(t.id) ? " on" : "");
+    b.textContent = t.label;
+    b.onclick = () => { toggleTag(tmp, t.id); b.classList.toggle("on"); };
+    q.appendChild(b);
+  }
+  box.querySelector(".save").onclick = () => {
+    const tv = parseFloat(box.querySelector("#temp-" + r.at).value);
+    r.temp = isNaN(tv) ? null : Math.round(tv * 10) / 10;
+    r.medName = box.querySelector("#med-" + r.at).value.trim();
+    r.memo = box.querySelector("#memo-" + r.at).value.trim();
+    r.tags = tmp.tags;
+    if (r.medName && !r.tags.includes("med")) r.tags.push("med");
+    openEdit = null; save(rows); render();
+    say("書きたしたよ", true);
+  };
+  return box;
+}
+
 function render(){
+  renderQuick();
   const list = $("#list"); list.textContent = "";
   $("#empty").hidden = rows.length > 0;
   $("#count").textContent = rows.length ? rows.length + "回" : "";
@@ -173,8 +247,16 @@ function render(){
     const wxHtml = w
       ? `<span class="chip">${w.weather}</span><span class="chip">${w.temp}℃</span><span class="chip">湿度${w.humidity}%</span><span class="chip">${w.pressure}hPa</span>${diffChip("3時間で", w.d3)}${diffChip("6時間で", w.d6)}`
       : `<span class="chip none">天気は取れなかったよ</span>`;
-    li.innerHTML = `<span class="dot"></span><div class="when"><span class="date">${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日（${WD[d.getDay()]}）</span><span class="time">${pad(d.getHours())}:${pad(d.getMinutes())}${w && w.place ? "・" + w.place : ""}</span><div class="wx">${wxHtml}</div></div><button class="del">消す</button>`;
-    const b = li.querySelector(".del");
+    const tagHtml = (r.tags||[]).map(id => { const t = TAGS.find(x => x.id === id); return t ? `<span class="chip t">${t.label}</span>` : ""; }).join("");
+    const extras = [
+      r.temp != null ? `🌡️ ${r.temp}℃` : "",
+      r.medName ? `💊 ${esc(r.medName)}` : "",
+      r.memo ? `📝 ${esc(r.memo)}` : ""
+    ].filter(Boolean).map(s => `<div class="extra">${s}</div>`).join("");
+    li.innerHTML = `<span class="dot"></span><div class="when"><span class="date">${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日（${WD[d.getDay()]}）</span><span class="time">${pad(d.getHours())}:${pad(d.getMinutes())}${w && w.place ? "・" + w.place : ""}</span>${tagHtml ? `<div class="wx">${tagHtml}</div>` : ""}${extras}<div class="wx">${wxHtml}</div></div><div class="btns"><button class="del add">書きたす</button><button class="del">消す</button></div>`;
+    li.querySelector(".add").onclick = () => { openEdit = openEdit === r.at ? null : r.at; render(); };
+    if (openEdit === r.at) li.querySelector(".when").appendChild(editForm(r));
+    const b = li.querySelector(".del:not(.add)");
     b.onclick = () => {
       if (!b.classList.contains("sure")){
         b.classList.add("sure"); b.textContent = "本当に消す？";
