@@ -86,16 +86,22 @@ li:first-child{border-top:none}
 #report{max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
 .rp-bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}
 .rp-bar .tool{padding:8px 14px;font-size:14px}
-.paper{background:#fff;color:#1f2633;border-radius:12px;padding:20px 18px;font-family:"Hiragino Sans","Noto Sans JP",sans-serif;line-height:1.6}
+.paper{background:#fff;color:#1f2633;border-radius:12px;padding:16px 14px;font-family:"Hiragino Sans","Noto Sans JP",sans-serif;line-height:1.6}
 .paper h2{font-size:19px;margin:0 0 2px}
 .paper .sub{font-size:12px;color:#5b6575;margin-bottom:14px}
-.paper h3{font-size:14px;margin:18px 0 6px;padding-bottom:4px;border-bottom:2px solid #1f2633}
-.sum{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
-.sum div{border:1px solid #cfd6df;border-radius:8px;padding:8px 10px}
-.sum b{display:block;font-size:22px;font-variant-numeric:tabular-nums}
-.sum span{font-size:12px;color:#5b6575}
-.pl{margin:0;padding-left:1.2em;font-size:14px;list-style:disc}
+.paper h3{font-size:14px;margin:12px 0 4px;padding-bottom:4px;border-bottom:2px solid #1f2633}
+.sum{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.sum div{border:1px solid #cfd6df;border-radius:8px;padding:6px 6px;text-align:center}
+.sum b{display:block;font-size:19px;font-variant-numeric:tabular-nums}
+.sum span{font-size:10.5px;color:#5b6575;line-height:1.3;display:block}
+.pl{margin:0;padding-left:1.2em;font-size:13px;list-style:disc}
 .paper li{display:list-item;border:none;padding:2px 0}
+.recs{display:flex;flex-direction:column;font-size:12.5px;font-variant-numeric:tabular-nums}
+.rec{padding:5px 0;border-bottom:1px solid #dde2e9;display:flex;flex-direction:column;gap:1px}
+.rec .l1{display:flex;flex-wrap:wrap;gap:0 10px;font-weight:700}
+.rec .l2{display:flex;flex-wrap:wrap;gap:0 10px;color:#3b4453}
+.rec .lv3{color:#b3333f}
+.dn{color:#b3333f;font-weight:700}
 .tbl{overflow-x:auto}
 .tbl table{border-collapse:collapse;width:100%;font-size:12.5px;font-variant-numeric:tabular-nums;min-width:520px}
 .tbl th,.tbl td{border:1px solid #cfd6df;padding:5px 6px;text-align:left;vertical-align:top}
@@ -431,19 +437,26 @@ function renderReport(){
   const rowsHtml = list.map(r => {
     const w = r.wx || {};
     const tags = (r.tags || []).map(id => ({ cold:"風邪", period:"生理", med:"服薬" }[id])).filter(Boolean).join("・");
-    const extra = [r.temp != null ? r.temp + "℃" : "", r.medName ? esc(r.medName) : "", r.memo ? esc(r.memo) : ""].filter(Boolean).join(" / ");
     const t = new Date(r.at);
-    return `<tr><td>${fmtD(r.at)}<br>${pad(t.getHours())}:${pad(t.getMinutes())}</td><td>${levelName(r.level) || "—"}</td><td>${w.pressure ?? "—"}</td><td class="${w.d3 != null && w.d3 <= -1 ? "dn" : ""}">${sg(w.d3)}</td><td class="${w.d6 != null && w.d6 <= -1 ? "dn" : ""}">${sg(w.d6)}</td><td>${w.weather || "—"}</td><td>${tags || "—"}</td><td>${extra || ""}</td></tr>`;
+    const cls = v => v != null && v <= -1 ? "dn" : "";
+    const l2 = [
+      w.pressure != null ? `${w.pressure}hPa（3h <span class="${cls(w.d3)}">${sg(w.d3)}</span> / 6h <span class="${cls(w.d6)}">${sg(w.d6)}</span>）` : "気圧 —",
+      w.weather || "",
+      r.temp != null ? r.temp + "℃" : "",
+      r.medName ? esc(r.medName) : "",
+      r.memo ? esc(r.memo) : ""
+    ].filter(Boolean).map(x => `<span>${x}</span>`).join("");
+    return `<div class="rec"><div class="l1"><span>${fmtD(r.at)} ${pad(t.getHours())}:${pad(t.getMinutes())}</span><span class="${r.level === 3 ? "lv3" : ""}">${levelName(r.level) || "強さ —"}</span>${tags ? `<span>${tags}</span>` : ""}</div><div class="l2">${l2}</div></div>`;
   }).join("");
 
   $("#paper").innerHTML = `
     <h2>頭痛の記録</h2>
     <div class="sub">期間：${fd(start)} 〜 ${fd(end)}（${months}か月）／痛いよーノートより</div>
     <div class="sum">
-      <div><b>${days.size}日</b><span>頭痛があった日</span></div>
-      <div><b>${list.length}回</b><span>記録した回数</span></div>
-      <div><b>${medDays.size}日</b><span>薬を飲んだ日</span></div>
-      <div><b>${[...days].filter(d => perDays.has(d)).length}日</b><span>生理と重なった日</span></div>
+      <div><b>${days.size}日</b><span>頭痛が<br>あった日</span></div>
+      <div><b>${list.length}回</b><span>記録した<br>回数</span></div>
+      <div><b>${medDays.size}日</b><span>薬を<br>飲んだ日</span></div>
+      <div><b>${[...days].filter(d => perDays.has(d)).length}日</b><span>生理と<br>重なった日</span></div>
     </div>
     <h3>痛みの強さ</h3>
     <ul class="pl">
@@ -456,7 +469,7 @@ function renderReport(){
       <li>気圧の変化の平均：3時間で ${sg(avg(d3s))}hPa、6時間で ${sg(avg(d6s))}hPa</li>
     </ul>
     <h3>記録の一覧</h3>
-    ${list.length ? `<div class="tbl"><table><thead><tr><th>日時</th><th>強さ</th><th>気圧<br>hPa</th><th>3時間<br>変化</th><th>6時間<br>変化</th><th>天気</th><th>印</th><th>体温・薬・メモ</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>` : `<p>この期間の記録はまだありません。</p>`}
+    ${list.length ? `<div class="recs">${rowsHtml}</div>` : `<p>この期間の記録はまだありません。</p>`}
   `;
 }
 
