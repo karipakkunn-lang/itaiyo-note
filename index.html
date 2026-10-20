@@ -78,6 +78,31 @@ li:first-child{border-top:none}
 .edit input,.edit textarea{font-family:inherit;font-size:16px;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px;width:100%}
 .edit .quick{justify-content:flex-start}
 .edit .tag{font-size:13px;padding:6px 10px}
+.levelq{display:flex;flex-direction:column;align-items:center;gap:6px;font-size:13px;color:var(--muted)}
+.tag.lv.on{background:var(--down);border-color:var(--down)}
+.chip.lv{background:var(--down);color:#fff;font-weight:700}
+.tools{display:flex;flex-direction:column;gap:10px}
+.tool{font-family:inherit;font-size:15px;font-weight:700;text-align:center;border:2px solid var(--line);background:var(--card);color:var(--fg);border-radius:14px;padding:12px;cursor:pointer}
+#report{max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+.rp-bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}
+.rp-bar .tool{padding:8px 14px;font-size:14px}
+.paper{background:#fff;color:#1f2633;border-radius:12px;padding:20px 18px;font-family:"Hiragino Sans","Noto Sans JP",sans-serif;line-height:1.6}
+.paper h2{font-size:19px;margin:0 0 2px}
+.paper .sub{font-size:12px;color:#5b6575;margin-bottom:14px}
+.paper h3{font-size:14px;margin:18px 0 6px;padding-bottom:4px;border-bottom:2px solid #1f2633}
+.sum{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.sum div{border:1px solid #cfd6df;border-radius:8px;padding:8px 10px}
+.sum b{display:block;font-size:22px;font-variant-numeric:tabular-nums}
+.sum span{font-size:12px;color:#5b6575}
+.pl{margin:0;padding-left:1.2em;font-size:14px;list-style:disc}
+.paper li{display:list-item;border:none;padding:2px 0}
+.tbl{overflow-x:auto}
+.tbl table{border-collapse:collapse;width:100%;font-size:12.5px;font-variant-numeric:tabular-nums;min-width:520px}
+.tbl th,.tbl td{border:1px solid #cfd6df;padding:5px 6px;text-align:left;vertical-align:top}
+.tbl th{background:#eef1f5;white-space:nowrap}
+.tbl td:nth-child(-n+6){white-space:nowrap}
+.tbl .dn{color:#b3333f;font-weight:700}
+@media print{body{background:#fff;padding:0}.rp-bar{display:none}.paper{border-radius:0;padding:0}}
 .save{font-family:inherit;font-size:15px;font-weight:700;border:none;background:var(--tear);color:var(--card);border-radius:999px;padding:10px;cursor:pointer}
 </style>
 </head>
@@ -98,8 +123,9 @@ li:first-child{border-top:none}
     </button>
     <div class="label">痛いよー</div>
     <div class="status" id="status" role="status">押すと、いまの日時と天気・気圧を記録するよ</div>
+    <div class="levelq" id="levelq"><span>どのくらい？</span><div class="quick" id="level"></div></div>
     <div class="quick" id="quick"></div>
-    <div class="quick-hint">↑ いちばん新しい記録に印がつくよ</div>
+    <div class="quick-hint">↑ いちばん新しい記録につくよ（選ばなくても大丈夫）</div>
   </div>
 
   <section>
@@ -107,7 +133,22 @@ li:first-child{border-top:none}
     <ul id="list"></ul>
     <p class="empty" id="empty">まだ記録はないよ。<br>痛くなったら、上の顔を押してね。</p>
   </section>
-  <p class="note">記録はこのスマホの中にだけ保存されます。<br>天気データ：Open-Meteo</p>
+
+  <div class="tools">
+    <button class="tool" id="openReport">🩺 先生に見せる画面</button>
+    <button class="tool" id="exportBtn">📤 記録を書き出す</button>
+    <label class="tool" for="importFile">📥 記録を読みこむ</label>
+    <input type="file" id="importFile" accept=".json,application/json" hidden>
+  </div>
+  <p class="note">記録はこのスマホの中にだけ保存されます。<br>ときどき「書き出す」で控えをとっておくと安心だよ。<br>天気データ：Open-Meteo</p>
+</div>
+
+<div id="report" hidden>
+  <div class="rp-bar">
+    <button class="tool" id="closeReport">← もどる</button>
+    <div class="quick" id="range"></div>
+  </div>
+  <div class="paper" id="paper"></div>
 </div>
 
 <script>
@@ -190,9 +231,27 @@ function toggleTag(rec, id){
   rec.tags = rec.tags.includes(id) ? rec.tags.filter(t => t !== id) : [...rec.tags, id];
 }
 
+const LEVELS = [ { v:1, label:"弱い" }, { v:2, label:"ふつう" }, { v:3, label:"つよい" } ];
+const levelName = v => (LEVELS.find(l => l.v === v) || {}).label || "";
+
+function levelButtons(target, onPick){
+  const box = document.createElement("div"); box.className = "quick";
+  for (const l of LEVELS){
+    const b = document.createElement("button");
+    b.className = "tag lv" + (target && target.level === l.v ? " on" : "");
+    b.textContent = l.label;
+    b.disabled = !target;
+    b.onclick = () => { target.level = target.level === l.v ? null : l.v; onPick(b); };
+    box.appendChild(b);
+  }
+  return box;
+}
+
 function renderQuick(){
-  const q = $("#quick"); q.textContent = "";
   const latest = rows[0];
+  const lv = $("#level"); lv.textContent = "";
+  lv.append(...levelButtons(latest, () => { save(rows); render(); }).childNodes);
+  const q = $("#quick"); q.textContent = "";
   for (const t of TAGS){
     const b = document.createElement("button");
     b.className = "tag" + (latest && (latest.tags||[]).includes(t.id) ? " on" : "");
@@ -208,13 +267,17 @@ function esc(s){ return String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&l
 function editForm(r){
   const box = document.createElement("div");
   box.className = "edit";
-  const tmp = { tags: [...(r.tags||[])] };
-  box.innerHTML = `<div class="quick"></div>
+  const tmp = { tags: [...(r.tags||[])], level: r.level ?? null };
+  box.innerHTML = `<div class="lvbox"></div><div class="quick"></div>
     <label>体温（℃）<input type="number" inputmode="decimal" step="0.1" min="34" max="42" id="temp-${r.at}" value="${r.temp ?? ""}" placeholder="例：37.2"></label>
     <label>飲んだ薬<input type="text" id="med-${r.at}" value="${esc(r.medName || "")}" placeholder="例：ロキソニン 1錠"></label>
     <label>メモ<textarea rows="2" id="memo-${r.at}" placeholder="例：右側がズキズキ、寝不足">${esc(r.memo || "")}</textarea></label>
     <button class="save">保存する</button>`;
-  const q = box.querySelector(".quick");
+  const lvb = levelButtons(tmp, () => {
+    lvb.querySelectorAll(".tag").forEach((x, i) => x.classList.toggle("on", tmp.level === LEVELS[i].v));
+  });
+  box.querySelector(".lvbox").appendChild(lvb);
+  const q = box.querySelector(".lvbox + .quick");
   for (const t of TAGS){
     const b = document.createElement("button");
     b.className = "tag" + (tmp.tags.includes(t.id) ? " on" : "");
@@ -228,6 +291,7 @@ function editForm(r){
     r.medName = box.querySelector("#med-" + r.at).value.trim();
     r.memo = box.querySelector("#memo-" + r.at).value.trim();
     r.tags = tmp.tags;
+    r.level = tmp.level;
     if (r.medName && !r.tags.includes("med")) r.tags.push("med");
     openEdit = null; save(rows); render();
     say("書きたしたよ", true);
@@ -247,7 +311,7 @@ function render(){
     const wxHtml = w
       ? `<span class="chip">${w.weather}</span><span class="chip">${w.temp}℃</span><span class="chip">湿度${w.humidity}%</span><span class="chip">${w.pressure}hPa</span>${diffChip("3時間で", w.d3)}${diffChip("6時間で", w.d6)}`
       : `<span class="chip none">天気は取れなかったよ</span>`;
-    const tagHtml = (r.tags||[]).map(id => { const t = TAGS.find(x => x.id === id); return t ? `<span class="chip t">${t.label}</span>` : ""; }).join("");
+    const tagHtml = (r.level ? `<span class="chip lv">痛み：${levelName(r.level)}</span>` : "") + (r.tags||[]).map(id => { const t = TAGS.find(x => x.id === id); return t ? `<span class="chip t">${t.label}</span>` : ""; }).join("");
     const extras = [
       r.temp != null ? `🌡️ ${r.temp}℃` : "",
       r.medName ? `💊 ${esc(r.medName)}` : "",
@@ -288,6 +352,116 @@ $("#cry").onclick = async () => {
   }
   btn.disabled = false;
 };
+
+/* ---------- 書き出し・読みこみ ---------- */
+$("#exportBtn").onclick = async () => {
+  const d = new Date();
+  const name = `itaiyo-note-${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}.json`;
+  const text = JSON.stringify({ app:"itaiyo-note", version:1, exportedAt:d.toISOString(), rows }, null, 1);
+  const file = new File([text], name, { type:"application/json" });
+  try {
+    if (navigator.canShare && navigator.canShare({ files:[file] })) {
+      await navigator.share({ files:[file], title:"痛いよーノートの控え" });
+      say("書き出したよ。「ファイルに保存」でしまっておいてね", true);
+      return;
+    }
+  } catch(e){ if (e.name === "AbortError") return; }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(file); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  say("書き出したよ（ダウンロードに入ってるよ）", true);
+};
+
+$("#importFile").onchange = async e => {
+  const f = e.target.files[0]; e.target.value = "";
+  if (!f) return;
+  try {
+    const data = JSON.parse(await f.text());
+    const incoming = Array.isArray(data) ? data : data.rows;
+    if (!Array.isArray(incoming)) throw new Error("bad");
+    const map = new Map(rows.map(r => [r.at, r]));
+    let added = 0;
+    for (const r of incoming){
+      if (typeof r.at !== "number") continue;
+      if (!map.has(r.at)) added++;
+      map.set(r.at, { ...map.get(r.at), ...r });
+    }
+    rows = [...map.values()].sort((a, b) => b.at - a.at);
+    save(rows); render();
+    say(`読みこんだよ。${added}件ふえたよ`, true);
+    window.scrollTo({ top:0, behavior:"smooth" });
+  } catch(err){
+    say("このファイルは読みこめなかったよ。書き出した .json ファイルを選んでね");
+    window.scrollTo({ top:0, behavior:"smooth" });
+  }
+};
+
+/* ---------- 先生に見せる画面 ---------- */
+let months = 1;
+const fmtD = t => { const d = new Date(t); return `${d.getMonth()+1}/${d.getDate()}（${WD[d.getDay()]}）`; };
+const dayKey = t => { const d = new Date(t); return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; };
+
+function renderReport(){
+  const rg = $("#range"); rg.textContent = "";
+  for (const m of [1, 3]){
+    const b = document.createElement("button");
+    b.className = "tag" + (months === m ? " on" : "");
+    b.textContent = m + "か月";
+    b.onclick = () => { months = m; renderReport(); };
+    rg.appendChild(b);
+  }
+  const end = new Date();
+  const start = new Date(end); start.setMonth(start.getMonth() - months); start.setHours(0,0,0,0);
+  const list = rows.filter(r => r.at >= start.getTime()).sort((a, b) => a.at - b.at);
+  const days = new Set(list.map(r => dayKey(r.at)));
+  const has = (r, t) => (r.tags || []).includes(t);
+  const medDays = new Set(list.filter(r => has(r, "med")).map(r => dayKey(r.at)));
+  const perDays = new Set(list.filter(r => has(r, "period")).map(r => dayKey(r.at)));
+  const coldDays = new Set(list.filter(r => has(r, "cold")).map(r => dayKey(r.at)));
+  const lvCount = v => list.filter(r => r.level === v).length;
+  const noLv = list.filter(r => !r.level).length;
+  const d6s = list.map(r => r.wx && r.wx.d6).filter(v => v != null);
+  const d3s = list.map(r => r.wx && r.wx.d3).filter(v => v != null);
+  const avg = a => a.length ? (Math.round(a.reduce((s, v) => s + v, 0) / a.length * 10) / 10) : null;
+  const drop6 = d6s.filter(v => v <= -1).length;
+  const sg = v => { if (v == null) return "—"; v = Math.round(v * 10) / 10; return (v > 0 ? "+" : "") + v; };
+  const fd = d => `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
+
+  const rowsHtml = list.map(r => {
+    const w = r.wx || {};
+    const tags = (r.tags || []).map(id => ({ cold:"風邪", period:"生理", med:"服薬" }[id])).filter(Boolean).join("・");
+    const extra = [r.temp != null ? r.temp + "℃" : "", r.medName ? esc(r.medName) : "", r.memo ? esc(r.memo) : ""].filter(Boolean).join(" / ");
+    const t = new Date(r.at);
+    return `<tr><td>${fmtD(r.at)}<br>${pad(t.getHours())}:${pad(t.getMinutes())}</td><td>${levelName(r.level) || "—"}</td><td>${w.pressure ?? "—"}</td><td class="${w.d3 != null && w.d3 <= -1 ? "dn" : ""}">${sg(w.d3)}</td><td class="${w.d6 != null && w.d6 <= -1 ? "dn" : ""}">${sg(w.d6)}</td><td>${w.weather || "—"}</td><td>${tags || "—"}</td><td>${extra || ""}</td></tr>`;
+  }).join("");
+
+  $("#paper").innerHTML = `
+    <h2>頭痛の記録</h2>
+    <div class="sub">期間：${fd(start)} 〜 ${fd(end)}（${months}か月）／痛いよーノートより</div>
+    <div class="sum">
+      <div><b>${days.size}日</b><span>頭痛があった日</span></div>
+      <div><b>${list.length}回</b><span>記録した回数</span></div>
+      <div><b>${medDays.size}日</b><span>薬を飲んだ日</span></div>
+      <div><b>${[...days].filter(d => perDays.has(d)).length}日</b><span>生理と重なった日</span></div>
+    </div>
+    <h3>痛みの強さ</h3>
+    <ul class="pl">
+      <li>つよい：${lvCount(3)}回　ふつう：${lvCount(2)}回　弱い：${lvCount(1)}回${noLv ? `　（未選択：${noLv}回）` : ""}</li>
+      ${coldDays.size ? `<li>風邪っぽい症状があった日：${coldDays.size}日</li>` : ""}
+    </ul>
+    <h3>気圧との関係</h3>
+    <ul class="pl">
+      <li>頭痛のとき、6時間前より気圧が1hPa以上下がっていた：${drop6}回 / ${d6s.length}回</li>
+      <li>気圧の変化の平均：3時間で ${sg(avg(d3s))}hPa、6時間で ${sg(avg(d6s))}hPa</li>
+    </ul>
+    <h3>記録の一覧</h3>
+    ${list.length ? `<div class="tbl"><table><thead><tr><th>日時</th><th>強さ</th><th>気圧<br>hPa</th><th>3時間<br>変化</th><th>6時間<br>変化</th><th>天気</th><th>印</th><th>体温・薬・メモ</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>` : `<p>この期間の記録はまだありません。</p>`}
+  `;
+}
+
+$("#openReport").onclick = () => { renderReport(); $(".wrap").hidden = true; $("#report").hidden = false; window.scrollTo(0, 0); };
+$("#closeReport").onclick = () => { $("#report").hidden = true; $(".wrap").hidden = false; window.scrollTo(0, 0); };
 
 render();
 </script>
