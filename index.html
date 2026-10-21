@@ -78,6 +78,13 @@ li:first-child{border-top:none}
 .edit input,.edit textarea{font-family:inherit;font-size:16px;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px;width:100%}
 .edit .quick{justify-content:flex-start}
 .edit .tag{font-size:13px;padding:6px 10px}
+.tabs{display:flex;gap:6px;justify-content:center}
+.tabs .tag{min-width:90px}
+.wk{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;text-align:center;font-size:12px;font-variant-numeric:tabular-nums}
+.wk div{border:1px solid #cfd6df;border-radius:6px;padding:3px 0}
+.wk b{display:block;font-size:15px}
+.wk .hi{background:#fde8ea;border-color:#e3a3aa}
+.tod{grid-template-columns:repeat(4,minmax(0,1fr))}
 .levelq{display:flex;flex-direction:column;align-items:center;gap:6px;font-size:13px;color:var(--muted)}
 .tag.lv.on{background:var(--down);border-color:var(--down)}
 .chip.lv{background:var(--down);color:#fff;font-weight:700}
@@ -115,6 +122,7 @@ li:first-child{border-top:none}
 <body>
 <div class="wrap">
   <h1>痛いよーノート</h1>
+  <div class="tabs" id="tabs"></div>
   <div class="hero">
     <button id="cry" aria-label="痛いよー（いまの日時と天気を記録する）">
       <svg viewBox="0 0 200 200" aria-hidden="true">
@@ -137,7 +145,7 @@ li:first-child{border-top:none}
   <section>
     <div class="head"><h2>記録</h2><span class="count" id="count"></span></div>
     <ul id="list"></ul>
-    <p class="empty" id="empty">まだ記録はないよ。<br>痛くなったら、上の顔を押してね。</p>
+    <p class="empty" id="empty">この人の記録はまだないよ。<br>痛くなったら、上の顔を押してね。</p>
   </section>
 
   <div class="tools">
@@ -166,6 +174,25 @@ const $ = s => document.querySelector(s);
 function load(){ try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch(e){ return []; } }
 function save(rows){ try { localStorage.setItem(KEY, JSON.stringify(rows)); return true; } catch(e){ return false; } }
 let rows = load();
+const PEOPLE = [
+  { id:"anju", name:"杏樹", tags:["cold","period","med"] },
+  { id:"shizuku", name:"雫", tags:["cold","school","med"] }
+];
+let cur = "anju";
+try { cur = localStorage.getItem("itaiyo-who") || "anju"; } catch(e){}
+if (!PEOPLE.find(p => p.id === cur)) cur = "anju";
+const person = () => PEOPLE.find(p => p.id === cur);
+const view = () => rows.filter(r => (r.who || "anju") === cur);
+function renderTabs(){
+  const t = $("#tabs"); t.textContent = "";
+  for (const p of PEOPLE){
+    const b = document.createElement("button");
+    b.className = "tag" + (p.id === cur ? " on" : "");
+    b.textContent = p.name;
+    b.onclick = () => { cur = p.id; openEdit = null; try { localStorage.setItem("itaiyo-who", cur); } catch(e){} render(); };
+    t.appendChild(b);
+  }
+}
 
 function say(t, ok){ const s=$("#status"); s.textContent=t; s.classList.toggle("ok",!!ok); }
 const pad = n => String(n).padStart(2,"0");
@@ -228,7 +255,8 @@ function diffChip(label, v){
 const TAGS = [
   { id:"cold", label:"🤧 風邪っぽい" },
   { id:"period", label:"🚺 生理" },
-  { id:"med", label:"💊 薬のんだ" }
+  { id:"med", label:"💊 薬のんだ" },
+  { id:"school", label:"🏫 休んだ・早退" }
 ];
 let openEdit = null; // 書きたし中の記録
 
@@ -254,11 +282,11 @@ function levelButtons(target, onPick){
 }
 
 function renderQuick(){
-  const latest = rows[0];
+  const latest = view()[0];
   const lv = $("#level"); lv.textContent = "";
   lv.append(...levelButtons(latest, () => { save(rows); render(); }).childNodes);
   const q = $("#quick"); q.textContent = "";
-  for (const t of TAGS){
+  for (const t of TAGS.filter(x => person().tags.includes(x.id))){
     const b = document.createElement("button");
     b.className = "tag" + (latest && (latest.tags||[]).includes(t.id) ? " on" : "");
     b.textContent = t.label;
@@ -284,7 +312,7 @@ function editForm(r){
   });
   box.querySelector(".lvbox").appendChild(lvb);
   const q = box.querySelector(".lvbox + .quick");
-  for (const t of TAGS){
+  for (const t of TAGS.filter(x => person().tags.includes(x.id) || tmp.tags.includes(x.id))){
     const b = document.createElement("button");
     b.className = "tag" + (tmp.tags.includes(t.id) ? " on" : "");
     b.textContent = t.label;
@@ -306,11 +334,14 @@ function editForm(r){
 }
 
 function render(){
+  renderTabs();
   renderQuick();
+  const vrows = view();
+  $("#cry").setAttribute("aria-label", person().name + "の痛いよー（いまの日時と天気を記録する）");
   const list = $("#list"); list.textContent = "";
-  $("#empty").hidden = rows.length > 0;
-  $("#count").textContent = rows.length ? rows.length + "回" : "";
-  for (const r of rows){
+  $("#empty").hidden = vrows.length > 0;
+  $("#count").textContent = vrows.length ? vrows.length + "回" : "";
+  for (const r of vrows){
     const d = new Date(r.at);
     const li = document.createElement("li");
     const w = r.wx;
@@ -344,7 +375,7 @@ $("#cry").onclick = async () => {
   btn.classList.remove("wobble"); void btn.offsetWidth; btn.classList.add("wobble");
   btn.disabled = true;
   const at = Date.now();
-  const rec = { at, wx: null };
+  const rec = { at, who: cur, wx: null };
   rows = [rec, ...rows]; save(rows); render();
   say("記録したよ。いま天気を調べてる…");
   try {
@@ -419,7 +450,7 @@ function renderReport(){
   }
   const end = new Date();
   const start = new Date(end); start.setMonth(start.getMonth() - months); start.setHours(0,0,0,0);
-  const list = rows.filter(r => r.at >= start.getTime()).sort((a, b) => a.at - b.at);
+  const list = view().filter(r => r.at >= start.getTime()).sort((a, b) => a.at - b.at);
   const days = new Set(list.map(r => dayKey(r.at)));
   const has = (r, t) => (r.tags || []).includes(t);
   const medDays = new Set(list.filter(r => has(r, "med")).map(r => dayKey(r.at)));
@@ -434,9 +465,18 @@ function renderReport(){
   const sg = v => { if (v == null) return "—"; v = Math.round(v * 10) / 10; return (v > 0 ? "+" : "") + v; };
   const fd = d => `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
 
+  const schoolDays = new Set(list.filter(r => has(r, "school")).map(r => dayKey(r.at)));
+  const wk = [0,0,0,0,0,0,0]; list.forEach(r => wk[new Date(r.at).getDay()]++);
+  const wkMax = Math.max(...wk);
+  const wkOrder = [1,2,3,4,5,6,0];
+  const wkHtml = wkOrder.map(i => `<div class="${wk[i] && wk[i] === wkMax ? "hi" : ""}">${WD[i]}<b>${wk[i]}</b></div>`).join("");
+  const TOD = [["朝","5〜10時",5,11],["昼","11〜15時",11,16],["夕方","16〜19時",16,20],["夜","20〜4時",20,29]];
+  const tc = TOD.map(([, , a, b]) => list.filter(r => { let h = new Date(r.at).getHours(); if (h < 5) h += 24; return h >= a && h < b; }).length);
+  const tMax = Math.max(...tc);
+  const todHtml = TOD.map((x, i) => `<div class="${tc[i] && tc[i] === tMax ? "hi" : ""}">${x[0]}<b>${tc[i]}</b><span style="font-size:10px;color:#5b6575">${x[1]}</span></div>`).join("");
   const rowsHtml = list.map(r => {
     const w = r.wx || {};
-    const tags = (r.tags || []).map(id => ({ cold:"風邪", period:"生理", med:"服薬" }[id])).filter(Boolean).join("・");
+    const tags = (r.tags || []).map(id => ({ cold:"風邪", period:"生理", med:"服薬", school:"休み・早退" }[id])).filter(Boolean).join("・");
     const t = new Date(r.at);
     const cls = v => v != null && v <= -1 ? "dn" : "";
     const l2 = [
@@ -450,19 +490,25 @@ function renderReport(){
   }).join("");
 
   $("#paper").innerHTML = `
-    <h2>頭痛の記録</h2>
+    <h2>${person().name}の頭痛の記録</h2>
     <div class="sub">期間：${fd(start)} 〜 ${fd(end)}（${months}か月）／痛いよーノートより</div>
     <div class="sum">
       <div><b>${days.size}日</b><span>頭痛が<br>あった日</span></div>
       <div><b>${list.length}回</b><span>記録した<br>回数</span></div>
       <div><b>${medDays.size}日</b><span>薬を<br>飲んだ日</span></div>
-      <div><b>${[...days].filter(d => perDays.has(d)).length}日</b><span>生理と<br>重なった日</span></div>
+      ${person().tags.includes("period")
+        ? `<div><b>${[...days].filter(d => perDays.has(d)).length}日</b><span>生理と<br>重なった日</span></div>`
+        : `<div><b>${schoolDays.size}日</b><span>休んだ・<br>早退した日</span></div>`}
     </div>
     <h3>痛みの強さ</h3>
     <ul class="pl">
       <li>つよい：${lvCount(3)}回　ふつう：${lvCount(2)}回　弱い：${lvCount(1)}回${noLv ? `　（未選択：${noLv}回）` : ""}</li>
       ${coldDays.size ? `<li>風邪っぽい症状があった日：${coldDays.size}日</li>` : ""}
     </ul>
+    <h3>曜日ごとの回数</h3>
+    <div class="wk">${wkHtml}</div>
+    <h3>時間帯ごとの回数</h3>
+    <div class="wk tod">${todHtml}</div>
     <h3>気圧との関係</h3>
     <ul class="pl">
       <li>頭痛のとき、6時間前より気圧が1hPa以上下がっていた：${drop6}回 / ${d6s.length}回</li>
