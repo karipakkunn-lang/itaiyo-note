@@ -221,6 +221,31 @@ function getPos(){
   });
 }
 
+// 指定した時刻の天気（過去92日まで）
+async function getWeatherAt(pos, ts){
+  const u = "https://api.open-meteo.com/v1/forecast?latitude=" + pos.lat.toFixed(3) + "&longitude=" + pos.lon.toFixed(3) +
+    "&hourly=temperature_2m,relative_humidity_2m,pressure_msl,weather_code&past_days=92&forecast_days=1&timezone=Asia%2FTokyo";
+  const r = await fetch(u);
+  if (!r.ok) throw new Error("weather");
+  const j = await r.json();
+  const d = new Date(ts);
+  const key = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:00`;
+  const i = j.hourly.time.indexOf(key);
+  if (i < 0) throw new Error("range");
+  const h = j.hourly, p = h.pressure_msl;
+  if (p[i] == null) throw new Error("range");
+  const diff = n => (i >= n && p[i-n] != null) ? Math.round((p[i] - p[i-n]) * 10) / 10 : null;
+  return {
+    place: pos.name,
+    weather: wxName(h.weather_code[i]),
+    temp: Math.round(h.temperature_2m[i] * 10) / 10,
+    humidity: Math.round(h.relative_humidity_2m[i]),
+    pressure: Math.round(p[i] * 10) / 10,
+    d3: diff(3),
+    d6: diff(6)
+  };
+}
+
 async function getWeather(pos){
   const u = "https://api.open-meteo.com/v1/forecast?latitude=" + pos.lat.toFixed(3) + "&longitude=" + pos.lon.toFixed(3) +
     "&current=temperature_2m,relative_humidity_2m,pressure_msl,weather_code" +
@@ -302,7 +327,10 @@ function editForm(r){
   const box = document.createElement("div");
   box.className = "edit";
   const tmp = { tags: [...(r.tags||[])], level: r.level ?? null };
-  box.innerHTML = `<div class="lvbox"></div><div class="quick"></div>
+  const dt = new Date(r.at);
+  const dtVal = `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+  box.innerHTML = `<label>痛くなった時間（だいたいでOK）<input type="datetime-local" id="when-${r.at}" value="${dtVal}"></label>
+    <div class="lvbox"></div><div class="quick"></div>
     <label>体温（℃）<input type="number" inputmode="decimal" step="0.1" min="34" max="42" id="temp-${r.at}" value="${r.temp ?? ""}" placeholder="例：37.2"></label>
     <label>飲んだ薬<input type="text" id="med-${r.at}" value="${esc(r.medName || "")}" placeholder="例：ロキソニン 1錠"></label>
     <label>メモ<textarea rows="2" id="memo-${r.at}" placeholder="例：右側がズキズキ、寝不足">${esc(r.memo || "")}</textarea></label>
@@ -319,7 +347,8 @@ function editForm(r){
     b.onclick = () => { toggleTag(tmp, t.id); b.classList.toggle("on"); };
     q.appendChild(b);
   }
-  box.querySelector(".save").onclick = () => {
+  box.querySelector(".save").onclick = async () => {
+    const wv = box.querySelector("#when-" + r.at).value;
     const tv = parseFloat(box.querySelector("#temp-" + r.at).value);
     r.temp = isNaN(tv) ? null : Math.round(tv * 10) / 10;
     r.medName = box.querySelector("#med-" + r.at).value.trim();
@@ -327,8 +356,25 @@ function editForm(r){
     r.tags = tmp.tags;
     r.level = tmp.level;
     if (r.medName && !r.tags.includes("med")) r.tags.push("med");
+    let newAt = wv ? new Date(wv).getTime() : r.at;
+    const moved = !isNaN(newAt) && Math.abs(newAt - r.at) >= 60000;
+    if (moved){
+      if (newAt > Date.now()) { say("未来の時間にはできないよ"); window.scrollTo({ top:0, behavior:"smooth" }); return; }
+      while (rows.some(x => x !== r && x.at === newAt)) newAt++;
+      r.at = newAt;
+      rows.sort((a, b) => b.at - a.at);
+    }
     openEdit = null; save(rows); render();
-    say("書きたしたよ", true);
+    if (!moved) { say("書きたしたよ", true); return; }
+    say("時間を直したよ。その時間の天気を調べてる…");
+    try {
+      const pos = (await getPos()) || HOME;
+      r.wx = await getWeatherAt(pos, r.at);
+      save(rows); render();
+      say("時間を直して、その時間の天気に入れ替えたよ", true);
+    } catch(e){
+      say("時間は直したよ。天気は取り直せなかったから、前のままだよ");
+    }
   };
   return box;
 }
